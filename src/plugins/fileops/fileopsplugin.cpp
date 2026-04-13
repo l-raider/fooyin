@@ -93,8 +93,7 @@ void FileOpsPlugin::initialise(const GuiPluginContext& context)
     m_trackSelectionController = context.trackSelection;
 
     auto* deletePlayingAction = new QAction(tr("Delete currently playing file"), this);
-    auto* deletePlayingCmd
-        = m_actionManager->registerAction(deletePlayingAction, "FileOps.DeleteCurrentlyPlaying");
+    auto* deletePlayingCmd    = m_actionManager->registerAction(deletePlayingAction, "FileOps.DeleteCurrentlyPlaying");
     deletePlayingCmd->setCategories({tr("Edit")});
 
     const auto updateDeletePlayingAction = [this, deletePlayingAction]() {

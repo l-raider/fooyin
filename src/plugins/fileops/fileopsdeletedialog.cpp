@@ -41,10 +41,9 @@ FileOpsDeleteDialog::FileOpsDeleteDialog(const TrackList& tracks, SettingsManage
 
     auto* layout = new QVBoxLayout(this);
 
-    const QString message = tracks.size() == 1
-                              ? tr("Are you sure you want to delete \"%1\"?\n%2")
-                                    .arg(tracks.front().effectiveTitle(), tracks.front().filepath())
-                              : tr("Are you sure you want to delete %1 tracks?").arg(tracks.size());
+    const QString message = tracks.size() == 1 ? tr("Are you sure you want to delete \"%1\"?\n%2")
+                                                     .arg(tracks.front().effectiveTitle(), tracks.front().filepath())
+                                               : tr("Are you sure you want to delete %1 tracks?").arg(tracks.size());
 
     auto* label = new QLabel(message, this);
     label->setWordWrap(true);
