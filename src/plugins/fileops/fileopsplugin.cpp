@@ -25,6 +25,7 @@
 #include "fileopsdialog.h"
 #include "fileopssettings.h"
 
+#include <core/player/playercontroller.h>
 #include <gui/guiconstants.h>
 #include <gui/statusevent.h>
 #include <gui/trackselectioncontroller.h>
@@ -73,6 +74,7 @@ namespace Fooyin::FileOps {
 FileOpsPlugin::FileOpsPlugin()
     : m_actionManager{nullptr}
     , m_library{nullptr}
+    , m_playerController{nullptr}
     , m_trackSelectionController{nullptr}
     , m_settings{nullptr}
     , m_fileOpsMenu{nullptr}
@@ -80,14 +82,34 @@ FileOpsPlugin::FileOpsPlugin()
 
 void FileOpsPlugin::initialise(const CorePluginContext& context)
 {
-    m_library  = context.library;
-    m_settings = context.settingsManager;
+    m_library          = context.library;
+    m_playerController = context.playerController;
+    m_settings         = context.settingsManager;
 }
 
 void FileOpsPlugin::initialise(const GuiPluginContext& context)
 {
     m_actionManager            = context.actionManager;
     m_trackSelectionController = context.trackSelection;
+
+    auto* deletePlayingAction = new QAction(tr("Delete currently playing file"), this);
+    auto* deletePlayingCmd
+        = m_actionManager->registerAction(deletePlayingAction, "FileOps.DeleteCurrentlyPlaying");
+    deletePlayingCmd->setCategories({tr("Edit")});
+
+    const auto updateDeletePlayingAction = [this, deletePlayingAction]() {
+        deletePlayingAction->setEnabled(m_playerController->playState() != Player::PlayState::Stopped
+                                        && m_playerController->currentTrack().isValid()
+                                        && canOperateOnTracks({m_playerController->currentTrack()}));
+    };
+
+    QObject::connect(m_playerController, &PlayerController::currentTrackChanged, deletePlayingAction,
+                     updateDeletePlayingAction);
+    QObject::connect(m_playerController, &PlayerController::playStateChanged, deletePlayingAction,
+                     updateDeletePlayingAction);
+    updateDeletePlayingAction();
+
+    QObject::connect(deletePlayingAction, &QAction::triggered, this, &FileOpsPlugin::deleteCurrentlyPlaying);
 
     recreateMenu();
 }
@@ -216,4 +238,53 @@ void FileOpsPlugin::recreateMenu()
     });
     m_fileOpsMenu->addAction(deleteAction);
 }
+
+void FileOpsPlugin::deleteCurrentlyPlaying()
+{
+    const Track playing = m_playerController->currentTrack();
+    if(!playing.isValid() || !canOperateOnTracks({playing})) {
+        return;
+    }
+
+    const TrackList tracks{playing};
+
+    const auto runDelete = [this, tracks]() {
+        // Advance playback before deleting so the engine releases the file handle.
+        // This avoids deletion failures on Windows (file locking) and ensures
+        // consistent behaviour across all platforms.
+        if(m_playerController->hasNextTrack()) {
+            m_playerController->next();
+        }
+        else {
+            m_playerController->stop();
+        }
+
+        auto* worker = new FileOpsWorker(m_library, tracks, m_settings);
+        auto* thread = new QThread(this);
+        worker->moveToThread(thread);
+
+        QObject::connect(worker, &FileOpsWorker::deleteFinished, this, [](const TrackList& deletedTracks) {
+            const QString status = deletedTracks.empty() ? tr("No tracks deleted") : tr("Track deleted");
+            StatusEvent::post(status);
+        });
+        QObject::connect(worker, &Worker::finished, thread, &QThread::quit);
+        QObject::connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+
+        thread->start();
+        QMetaObject::invokeMethod(worker, &FileOpsWorker::deleteFiles);
+    };
+
+    const bool confirm = m_settings->fileValue(Settings::ConfirmDelete, true).toBool();
+    if(confirm) {
+        auto* dialog = new FileOpsDeleteDialog(tracks, m_settings, Utils::getMainWindow());
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        QObject::connect(dialog, &QDialog::accepted, dialog, [runDelete]() { runDelete(); });
+        dialog->open();
+    }
+    else {
+        runDelete();
+    }
+}
+
 } // namespace Fooyin::FileOps

@@ -28,6 +28,7 @@ class QMenu;
 
 namespace Fooyin {
 class ActionContainer;
+class PlayerController;
 
 namespace FileOps {
 class FileOpsPlugin : public QObject,
@@ -49,9 +50,11 @@ public:
 
 private:
     void recreateMenu();
+    void deleteCurrentlyPlaying();
 
     ActionManager* m_actionManager;
     MusicLibrary* m_library;
+    PlayerController* m_playerController;
     TrackSelectionController* m_trackSelectionController;
     SettingsManager* m_settings;
 
